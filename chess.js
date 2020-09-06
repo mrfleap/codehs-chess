@@ -50,10 +50,10 @@ var text = undefined;
 var clicksAfterLost = 0;
 
 var blackAI = true;
-var whiteAI = true;
+var whiteAI = false;
 var AI_delay = 1000;
 
-var debugMessages = true;
+var debugMessages = false;
 var showMinimaxDebug = false;
 
 var clicks = 0;
@@ -183,7 +183,7 @@ function doClick(row, col) {
 
             didAnim = true;
 
-            setTimer(finishTurn, animLength);
+            // setTimer(finishTurn, animLength);
             animMakeMove(moveFromRow, moveFromCol, row, col);
         }
         else {
@@ -205,13 +205,11 @@ function doClick(row, col) {
     }
 
     if (!didAnim) {
-        println("Calling instantly");
         finishTurn();
     }
 }
 
 function finishTurn() {
-    println("Finish turn called");
     stopTimer(finishTurn);
     checkmateChecks(fromWhite);
 
@@ -219,7 +217,7 @@ function finishTurn() {
     checkForPawnsAtEndOfBoard();
     refresh();
 
-    printOut("Board Value: " + evaluateBoard());
+    // println("Board Value: " + evaluateBoard());
 
     if (blackAI) {
         refresh();
@@ -230,7 +228,7 @@ function finishTurn() {
         checkForPawnsAtEndOfBoard();
 
         refresh();
-        printOut("Board Value: " + evaluateBoard());
+        println("Board Value: " + evaluateBoard());
     }
 }
 
@@ -259,6 +257,7 @@ function doBlackMove() {
         }
         catch {
             println("You win?")
+            showText("YOU WIN!")
         }
         var toRow = move["toRow"];
         var toCol = move["toCol"];
@@ -339,14 +338,16 @@ function getPossibleMoves(isWhite) {
     }
     return moves;
 }
-
+;
 function getMove(isWhite) {
     var moves = getPossibleMoves(isWhite);
     printOut("Found " + moves.length + " possible moves")
     if (moves.length > 0) {
         // return calculateBestMove(moves, isWhite)
         positions = 0;
-        var move = bestMinimaxMove(3, isWhite, -10000, 10000, false);
+        var now = Date.now()
+        var move = minimaxRoot(3, isWhite);
+        println("TOOK " + (Date.now() - now) / 1000 + "s")
         println("Searched " + positions + " positions")
         if (showMinimaxDebug) {
             println("Making move: " + printMove(move))
@@ -369,40 +370,157 @@ function printMove(move) {
 
 var positions = 0;
 
-function bestMinimaxMove(depth, maximizingPlayer, alpha, beta, shouldReturnValue) {
-    positions++;
-    if (depth == 0) {
-        return evaluateBoard()
-    }
+var getMovesTime = 0;
+var minimaxDepthTime = 0;
+var copyGridTime = 0;
+var replaceGridTime = 0;
+var totalTime = 0;
 
-    var moves = getPossibleMoves(maximizingPlayer);
-    var bestMoveValue = 9999 * (maximizingPlayer ? -1 : 1);
-    var bestMoveData = null;
+function printTimes() {
+    printOut("Get moves: " + getMovesTime)
+    printOut("Minimax Depth: " + minimaxDepthTime)
+    printOut("Copygrid: " + copyGridTime)
+    printOut("Replace Grid: " + replaceGridTime)
+    printOut("Total Time Taken: " + totalTime)
+    getMovesTime = 0;
+    minimaxDepthTime = 0;
+    copyGridTime = 0;
+    replaceGridTime = 0;
+    totalTime = 0;
+}
 
-
+function minimaxRoot(depth, isMaximizingPlayer) {
+    var moves = getPossibleMoves(isMaximizingPlayer);
+    var bestMove = -9999;
+    var bestMoveFound;
 
     for (var i = 0; i < moves.length; i++) {
         var move = moves[i];
 
         var boardCopy = copyGrid(board);
+
         makeMove(move["fromRow"], move["fromCol"], move["toRow"], move["toCol"]);
-        var value = bestMinimaxMove(depth - 1, !maximizingPlayer, alpha, beta, true);
+
+        var value = minimax(depth - 1, !isMaximizingPlayer, -10000, 10000, true);
+
         board = copyGrid(boardCopy);
 
-        if (showMinimaxDebug) {
-            if (maximizingPlayer) {
-                printOut("Maximizing player && " + value + " > " + bestMoveValue + ": " + (value > bestMoveValue))
-            }
-            else {
-                printOut("Not maximizing player && " + value + " < " + bestMoveValue + ": " + (value < bestMoveValue))
-            }
-        }
-
-        if ((maximizingPlayer && value > bestMoveValue) || (!maximizingPlayer && value < bestMoveValue)) {
-            bestMoveValue = value;
-            bestMoveData = move;
+        if (value >= bestMove) {
+            bestMove = value;
+            bestMoveFound = move;
         }
     }
+    return bestMoveFound;
+}
+
+// https://shrib.com/#chessai
+function minimax(depth, maximizingPlayer, alpha, beta, shouldReturnValue) {
+    var start = Date.now()
+    positions++;
+    if (depth == 0) {
+        return evaluateBoard()
+    }
+
+    var before = Date.now()
+    var moves = getPossibleMoves(maximizingPlayer);
+    getMovesTime += (Date.now() - before)
+    var bestMoveData = null;
+
+    if (maximizingPlayer) {
+        var bestMoveValue = -9999;
+        for (var i = 0; i < moves.length; i++) {
+            var move = moves[i];
+
+            before = Date.now();
+            var boardCopy = copyGrid(board);
+            copyGridTime += (Date.now() - before);
+
+            makeMove(move["fromRow"], move["fromCol"], move["toRow"], move["toCol"]);
+
+            before = Date.now();
+            var value = minimax(depth - 1, !maximizingPlayer, alpha, beta, true);
+            minimaxDepthTime += (Date.now() - before);
+
+            before = Date.now();
+            board = copyGrid(boardCopy);
+            replaceGridTime += (Date.now() - before);
+
+            printOut("Maximizing player && " + value + " > " + bestMoveValue + ": " + (value > bestMoveValue));
+
+
+            if (value > bestMoveValue) {
+                bestMoveData = move;
+            }
+            bestMoveValue = Math.max(bestMoveValue, value);
+
+            alpha = Math.max(alpha, bestMoveValue);
+
+
+
+            if (beta <= alpha) {
+                break;
+            }
+        }
+    }
+    else {
+        var bestMoveValue = 9999;
+        for (var i = 0; i < moves.length; i++) {
+            var move = moves[i];
+
+            before = Date.now();
+            var boardCopy = copyGrid(board);
+            copyGridTime += (Date.now() - before);
+
+
+            makeMove(move["fromRow"], move["fromCol"], move["toRow"], move["toCol"]);
+
+            before = Date.now();
+            var value = minimax(depth - 1, !maximizingPlayer, alpha, beta, true);
+            minimaxDepthTime += (Date.now() - before);
+
+            before = Date.now();
+            board = copyGrid(boardCopy);
+            replaceGridTime += (Date.now() - before);
+
+            printOut("Not maximizing player && " + value + " < " + bestMoveValue + ": " + (value < bestMoveValue));
+
+            if (value < bestMoveValue) {
+                bestMoveData = move;
+            }
+            bestMoveValue = Math.min(bestMoveValue, value);
+
+
+            beta = Math.min(beta, bestMoveValue);
+
+            if (beta <= alpha) {
+                break;
+            }
+        }
+    }
+    // for (var i = 0; i < moves.length; i++) {
+    //     var move = moves[i];
+
+    //     var boardCopy = copyGrid(board);
+    //     makeMove(move["fromRow"], move["fromCol"], move["toRow"], move["toCol"]);
+    //     var value = bestMinimaxMove(depth - 1, !maximizingPlayer, alpha, beta, true);
+    //     board = copyGrid(boardCopy);
+
+    //     if (showMinimaxDebug) {
+    //         if (maximizingPlayer) {
+    //             printOut("Maximizing player && " + value + " > " + bestMoveValue + ": " + (value > bestMoveValue))
+    //         }
+    //         else {
+    //             printOut("Not maximizing player && " + value + " < " + bestMoveValue + ": " + (value < bestMoveValue))
+    //         }
+    //     }
+
+    //     if((maximizingPlayer && value > bestMoveValue) || (!maximizingPlayer && value < bestMoveValue)) {
+    //         bestMoveValue = value;
+    //         bestMoveData = move;
+    //     }
+    // }
+
+    totalTime += (Date.now() - start)
 
     if (shouldReturnValue) {
         printOut("Found best move: " + printMove(bestMoveData) + " for " + bestMoveValue);
@@ -410,6 +528,7 @@ function bestMinimaxMove(depth, maximizingPlayer, alpha, beta, shouldReturnValue
     }
     else {
         printOut("Found final move: " + printMove(bestMoveData) + " for " + bestMoveValue);
+        printTimes();
         return bestMoveData;
     }
 }
@@ -784,13 +903,13 @@ function animMakeMove(fromRow, fromCol, row, col) {
 }
 
 function animStop() {
-    println("STOP")
     currentAnim = 0;
     board.set(animRow, animCol, animPieceType);
     stopTimer(animMove);
     stopTimer(animStop);
     remove(animPiece);
     refresh();
+    setTimer(finishTurn, 50);
 }
 
 function animMove() {
